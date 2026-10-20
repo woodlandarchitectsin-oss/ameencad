@@ -1,0 +1,6 @@
+upstream-qcad/
+build-qt5/
+build-win/
+reference/
+test-results/
+*.log

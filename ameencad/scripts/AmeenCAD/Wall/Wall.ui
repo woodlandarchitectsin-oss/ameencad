@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Wall</class>
+ <widget class="QWidget" name="Wall">
+  <layout class="QHBoxLayout">
+   <item>
+    <widget class="QLabel" name="ThicknessLabel">
+     <property name="text"><string>Thickness:</string></property>
+     <property name="buddy"><cstring>Thickness</cstring></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="Thickness">
+     <property name="toolTip"><string>Wall thickness. Plain numbers are mm; also 9in, 9", 0.75ft, 23cm</string></property>
+     <property name="text"><string notr="true">230</string></property>
+     <property name="minimumSize"><size><width>80</width><height>0</height></size></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="JustificationLabel">
+     <property name="text"><string>Baseline:</string></property>
+     <property name="buddy"><cstring>Justification</cstring></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QComboBox" name="Justification">
+     <item><property name="text"><string>Centre</string></property></item>
+     <item><property name="text"><string>Left face</string></property></item>
+     <item><property name="text"><string>Right face</string></property></item>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

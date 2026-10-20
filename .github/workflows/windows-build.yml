@@ -1,0 +1,104 @@
+# AmeenCAD — Windows x64 build on GitHub's free Windows runners.
+# Builds QCAD CE (pinned release) with Qt 5.15.2 / MSVC, adds the AmeenCAD
+# add-on, runs the headless engine tests ON WINDOWS, and uploads a portable zip.
+name: windows-build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  QCAD_TAG: v3.33.1.0
+  QT_VERSION: 5.15.2
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Checkout AmeenCAD
+        uses: actions/checkout@v4
+
+      - name: Fetch QCAD CE source (pinned)
+        shell: bash
+        run: git clone --depth 1 --branch "$QCAD_TAG" https://github.com/qcad/qcad.git qcad
+
+      - name: Install Qt (with Qt Script)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2019_64
+          modules: qtscript
+          cache: true
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install jom
+        shell: pwsh
+        run: choco install jom -y --no-progress
+
+      - name: Configure (qmake)
+        working-directory: qcad
+        shell: cmd
+        run: qmake -r qcad.pro CONFIG+=release
+
+      - name: Build
+        working-directory: qcad
+        shell: cmd
+        run: jom /J %NUMBER_OF_PROCESSORS% release
+
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          $pkg = "AmeenCAD"
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item qcad\release\*.exe, qcad\release\*.dll $pkg
+          foreach ($d in 'scripts','fonts','patterns','linetypes','libraries','themes','plugins','ts') {
+            if (Test-Path "qcad\$d") { Copy-Item -Recurse "qcad\$d" "$pkg\$d" }
+          }
+          Copy-Item -Recurse ameencad\scripts\AmeenCAD "$pkg\scripts\AmeenCAD"
+          New-Item -ItemType Directory -Force "$pkg\scripts\AmeenCAD\Tests" | Out-Null
+          Copy-Item ameencad\tests\qcad\*.js "$pkg\scripts\AmeenCAD\Tests"
+          Copy-Item qcad\LICENSE.txt, qcad\gpl-3.0.txt, qcad\gpl-3.0-exceptions.txt, qcad\lgpl.txt, qcad\cc-by-3.0.txt $pkg
+          Copy-Item LICENSES.md, THIRD_PARTY_NOTICES.md, README.md $pkg
+          windeployqt --release --no-translations --no-compiler-runtime "$pkg\qcad.exe"
+          # offscreen platform plugin, used only by the automated tests:
+          Copy-Item "$env:QT_ROOT_DIR\plugins\platforms\qoffscreen.dll" "$pkg\platforms\"
+          # MSVC runtime DLLs so the zip runs on a clean PC:
+          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Recurse -Filter "vcruntime140*.dll" | Select-Object -First 1
+          if ($crt) { Copy-Item "$($crt.Directory.FullName)\*.dll" $pkg }
+
+      - name: Run tests on Windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          $out = (Resolve-Path test-results).Path
+          node ameencad\tests\unit\wall_geometry.test.js | Tee-Object test-results\unit_results.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Push-Location AmeenCAD
+          foreach ($t in 'SaveReopenSmokeTest','WallIntegrationTest') {
+            Start-Process .\qcad.exe -ArgumentList "-platform","offscreen","-no-gui","-allow-multiple-instances","-locale","en","-autostart","scripts\AmeenCAD\Tests\$t.js",$out -Wait -NoNewWindow
+          }
+          Start-Process .\qcad.exe -ArgumentList "-platform","offscreen","-allow-multiple-instances","-no-show","-locale","en","-exec","scripts\AmeenCAD\Tests\GuiSmokeTest.js",$out,"-quit" -Wait -NoNewWindow
+          Pop-Location
+          Get-Content test-results\smoke_results.txt, test-results\wall_integration_results.txt, test-results\gui_smoke_results.txt
+          $bad = Select-String -Path test-results\*_results.txt -Pattern '^FAIL'
+          if ($bad -or -not (Test-Path test-results\wall_integration_results.txt) -or -not (Test-Path test-results\gui_smoke_results.txt)) { exit 1 }
+
+      - name: Upload AmeenCAD (Windows x64, portable)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmeenCAD-windows-x64
+          path: AmeenCAD
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results

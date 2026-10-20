@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>WallFromLine</class>
+ <widget class="QWidget" name="WallFromLine">
+  <layout class="QHBoxLayout">
+   <item>
+    <widget class="QCheckBox" name="DeleteBaseline">
+     <property name="text"><string>Delete baseline</string></property>
+     <property name="checked"><bool>false</bool></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
