@@ -27,7 +27,7 @@ Ubuntu ships Qt **5.15.13**; QCAD selects script bindings by exact Qt version an
 | Engine starts headless | `qcad-bin -no-gui -autostart …` | OK |
 | Draw → save → close → reopen (unmodified engine) | `SaveReopenSmokeTest.js`: line, circle, arc on a custom layer → DXF → fresh document → numeric compare (1e-9 mm) | **8/8 pass** |
 | Full GUI launches, AmeenCAD menu/commands load, WALL starts and cancels cleanly | `GuiSmokeTest.js`, offscreen platform | **9/9 pass** |
-| Visual check | `GuiScreenshot.js` draws a 4000 × 3000 room with 9 in walls, saves `test-results/ameencad_wall_screenshot.png` | Architecture menu and A-WALL layer visible |
+| Visual check | `GuiScreenshot.js` draws a 4000 × 3000 room with 9 in walls; copy in `docs/images/ameencad_wall_screenshot.png` | Architecture menu and A-WALL layer visible |
 
 Problem found and fixed during testing: passing the originally-added entity object to a later delete operation crashed the engine (segfault); the wall code now re-queries the baseline from the document before deleting it.
 

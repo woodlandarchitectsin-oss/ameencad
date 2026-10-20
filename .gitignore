@@ -4,3 +4,4 @@ build-win/
 reference/
 test-results/
 *.log
+*.zip
