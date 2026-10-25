@@ -116,10 +116,13 @@ jobs:
           $pkg = (New-Item -ItemType Directory -Force "AmeenCAD").FullName
           Get-ChildItem qcad\release | Select-Object -ExpandProperty Name | Write-Output
           Copy-Item qcad\release\*.exe, qcad\release\*.dll $pkg
-          # robocopy tolerates the broken links in QCAD's scripts tree; exit codes < 8 mean success
+          # QCAD's tree contains a dangling symlink (scripts/Tools/MergeDrawings/doc/mergedrawings.usage,
+          # a help-text file); remove links first, and tell robocopy to skip any (/XJ). Exit codes < 8 = success.
+          Get-ChildItem qcad\scripts, qcad\examples, qcad\libraries -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Output "removing link $($_.FullName)"; Remove-Item -LiteralPath $_.FullName -Force }
           foreach ($d in 'scripts','fonts','patterns','linetypes','libraries','themes','plugins','ts','examples') {
             if (Test-Path "qcad\$d") {
-              robocopy "qcad\$d" "$pkg\$d" /E /NFL /NDL /NJH /NJS /NP /R:0 /W:0 | Out-Null
+              robocopy "qcad\$d" "$pkg\$d" /E /XJ /NFL /NDL /NJH /NP /R:0 /W:0 | Select-Object -Last 8
               if ($LASTEXITCODE -ge 8) { throw "robocopy $d failed ($LASTEXITCODE)" }
             }
           }
