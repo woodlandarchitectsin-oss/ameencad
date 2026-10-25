@@ -32,10 +32,18 @@ jobs:
           modules: qtscript
           cache: true
 
-      - name: MSVC environment
+      - name: MSVC environment (VS 2019 toolset v14.29, which QCAD's build files expect)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+          toolset: '14.29'
+
+      - name: Check compiler version
+        shell: pwsh
+        run: |
+          cl 2>&1 | Select-Object -First 1
+          # restores std::binary_function etc. removed in C++17, used by bundled 3rd-party code
+          "CL=/D_HAS_AUTO_PTR_ETC=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install jom
         shell: pwsh
@@ -43,13 +51,30 @@ jobs:
 
       - name: Configure (qmake)
         working-directory: qcad
-        shell: cmd
-        run: qmake -r qcad.pro CONFIG+=release
+        shell: pwsh
+        run: |
+          qmake -r qcad.pro CONFIG+=release 2>&1 | Tee-Object -FilePath ..\qmake.log
+          Select-String -Path ..\qmake.log -Pattern 'error|Project MESSAGE|WARNING' | Select-Object -First 20 |
+            ForEach-Object { Write-Output "::warning::$($_.Line.Trim())" }
 
       - name: Build
         working-directory: qcad
-        shell: cmd
-        run: jom /J %NUMBER_OF_PROCESSORS% release
+        shell: pwsh
+        run: |
+          # -k: keep going so every error shows up in one run
+          jom /K /J $env:NUMBER_OF_PROCESSORS release 2>&1 | Tee-Object -FilePath ..\build.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            # surface compiler/linker errors as annotations (readable without log access)
+            $errs = Select-String -Path ..\build.log -Pattern ': (fatal )?error |error LNK|Project ERROR|jom: .*Error' |
+                    Select-Object -First 40
+            foreach ($e in $errs) {
+              $msg = $e.Line.Trim() -replace '%','%25' -replace "`r",'' -replace "`n",' '
+              if ($msg.Length -gt 900) { $msg = $msg.Substring(0, 900) }
+              Write-Output "::error::$msg"
+            }
+            exit $code
+          }
 
       - name: Assemble portable package
         shell: pwsh
@@ -96,9 +121,12 @@ jobs:
           name: AmeenCAD-windows-x64
           path: AmeenCAD
 
-      - name: Upload test results
+      - name: Upload test results and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: test-results
+          path: |
+            test-results
+            build.log
+            qmake.log
