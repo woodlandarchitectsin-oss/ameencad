@@ -3,7 +3,7 @@
 | Phase | Goal | Status (2026-10-20) |
 |---|---|---|
 | 1 | Environment audit & licensing | **Done** — see environment-audit.md, licensing-review.md |
-| 2 | Build & launch unmodified foundation | **Linux: done** (v3.33.1.0). **Windows: pending** — GitHub workflow ready |
+| 2 | Build & launch unmodified foundation | **Done** — Linux and Windows (CI build 8, all tests pass on Windows) |
 | 3 | Draw / save / reopen verified | **Done** on Linux (8/8) |
 | 4 | Branded AmeenCAD app (name, icon, title, splash, installer) | Planned |
 | 5 | Validate core 2D commands (LINE, PLINE, OFFSET, TRIM, …) | Planned — QCAD provides them; need recorded tests |
@@ -15,7 +15,7 @@
 
 ## Next smallest useful task
 
-Run the Windows workflow (or `docs/windows-build.md`) and record the result. Then Phase 4 branding.
+Hands-on check of the Windows zip on an office PC (draw walls with the mouse, save, reopen in AutoCAD/progeCAD). Then Phase 4 branding (AmeenCAD.exe name, icon, title, installer).
 
 ## Wall tool v2 backlog
 - Clean corners/T-junctions between consecutive walls (currently each segment is independent, ends overlap at corners).

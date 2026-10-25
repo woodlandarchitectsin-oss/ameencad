@@ -7,7 +7,7 @@ Scope: 2D only — precise geometry, layers, blocks, dimensions, DXF, printing. 
 ## Status (2026-10-20)
 - Foundation: QCAD CE **v3.33.1.0** (stable release), built from source with Qt 5.15 on Linux; all 162 automated checks pass (see `docs/build-report.md`, `docs/test-plan.md`).
 - First custom feature: **Wall tool** (`WALL`, `WALLLINE`) — two parallel boundaries on layer `A-WALL`, centre/left/right justification, thickness in mm or inches (`9in` = 228.6 mm), single-step undo.
-- Windows `.exe`: not yet built — push this repo to GitHub to run `.github/workflows/windows-build.yml`, or follow `docs/windows-build.md` on a Windows PC.
+- **Windows build: done.** Every push to `main` builds on GitHub Actions, runs all tests on Windows and publishes a zip under [Releases](https://github.com/woodlandarchitectsin-oss/ameencad/releases). First passing build: `v0.1.0-build.8`.
 - License: GPL v3 — read `docs/licensing-review.md` before distributing.
 
 ## Layout

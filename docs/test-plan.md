@@ -35,7 +35,7 @@ Latest run: 2026-10-20, Linux, QCAD 3.33.1 — **all 162 checks passed** (result
 | Feature | Status |
 |---|---|
 | Unmodified QCAD build (Linux) | TESTED |
-| Unmodified QCAD build (Windows) | PLANNED |
+| Unmodified QCAD build (Windows) | TESTED (CI build 8: 162/162 checks on windows-2022) |
 | DXF save/reopen: lines, arcs, circles, layers | TESTED |
 | DXF: blocks, text, dimensions, hatches | PLANNED |
 | WALL / WALLLINE commands | TESTED |
