@@ -30,6 +30,9 @@ jobs:
           # Upstream's qmake file for the MSVC 2019 spatial index is incomplete (compiles only the
           # R-tree, lacks SIDX_DLL_EXPORT) -> LNK2001. Replace it with one mirroring its CMakeLists.txt.
           cp patches/qcad/spatialindexnavel.pro qcad/src/3rdparty/spatialindexnavel/spatialindexnavel.pro
+          # main.cpp calls setlocale() without <clocale>; GCC gets it indirectly, MSVC does not.
+          sed -i 's|^#include <stdio.h>|#include <stdio.h>\n#include <clocale>|' qcad/src/run/main.cpp
+          grep -n "clocale" qcad/src/run/main.cpp
 
       - name: Install Qt (with Qt Script)
         uses: jurplel/install-qt-action@v4
