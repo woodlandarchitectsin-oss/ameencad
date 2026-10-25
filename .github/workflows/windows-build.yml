@@ -27,10 +27,9 @@ jobs:
       - name: Apply AmeenCAD build fixes to QCAD (documented in docs/build-report.md)
         shell: bash
         run: |
-          # Upstream qmake file for the MSVC 2019 spatial index lacks the export define that
-          # its CMakeLists.txt sets (SIDX_DLL_EXPORT) -> LNK2001 unresolved Tools::Exception etc.
-          echo 'DEFINES += SIDX_DLL_EXPORT' >> qcad/src/3rdparty/spatialindexnavel/spatialindexnavel.pro
-          tail -2 qcad/src/3rdparty/spatialindexnavel/spatialindexnavel.pro
+          # Upstream's qmake file for the MSVC 2019 spatial index is incomplete (compiles only the
+          # R-tree, lacks SIDX_DLL_EXPORT) -> LNK2001. Replace it with one mirroring its CMakeLists.txt.
+          cp patches/qcad/spatialindexnavel.pro qcad/src/3rdparty/spatialindexnavel/spatialindexnavel.pro
 
       - name: Install Qt (with Qt Script)
         uses: jurplel/install-qt-action@v4
