@@ -38,3 +38,10 @@ Not verified here: interactive mouse use, printing, PDF, anything on Windows.
 Not built — this VM cannot run MSVC. Two prepared routes:
 - `.github/workflows/windows-build.yml` — GitHub-hosted Windows runner: Qt 5.15.2 MSVC 2019 x64 + Qt Script, QCAD v3.33.1.0, AmeenCAD add-on, runs all tests **on Windows**, uploads a portable zip. Needs a GitHub repository. **Not yet run.**
 - `docs/windows-build.md` — manual steps on the office PC.
+
+## 6. Windows CI log (GitHub Actions, windows-2022)
+
+| Run | Result | Cause → fix |
+|---|---|---|
+| 1 (40172874814) | Build failed | Runner used VS 2022; QCAD's .pro files only select the modern spatial index for `_MSC_VER=1929` (VS 2019), so the legacy one was built and fails under C++17 (`std::binary_function`). → pinned toolset v14.29 (VS 2019). |
+| 3 (40173181072) | Build failed at link | Upstream `src/3rdparty/spatialindexnavel/spatialindexnavel.pro` omits `SIDX_DLL_EXPORT` (its CMakeLists.txt has it) → LNK2001. → workflow appends `DEFINES += SIDX_DLL_EXPORT` before qmake. |
