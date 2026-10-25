@@ -12,6 +12,9 @@ env:
   QCAD_TAG: v3.33.1.0
   QT_VERSION: 5.15.2
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-2022
@@ -59,7 +62,17 @@ jobs:
         shell: pwsh
         run: choco install jom -y --no-progress
 
+      - name: Restore compiled QCAD (cache)
+        id: qcadcache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            qcad/release
+            qcad/plugins
+          key: qcad-${{ env.QCAD_TAG }}-qt${{ env.QT_VERSION }}-${{ hashFiles('patches/**') }}-build-v1
+
       - name: Configure (qmake)
+        if: steps.qcadcache.outputs.cache-hit != 'true'
         working-directory: qcad
         shell: pwsh
         run: |
@@ -68,6 +81,7 @@ jobs:
             ForEach-Object { Write-Output "::warning::$($_.Line.Trim())" }
 
       - name: Build
+        if: steps.qcadcache.outputs.cache-hit != 'true'
         working-directory: qcad
         shell: pwsh
         run: |
@@ -86,26 +100,64 @@ jobs:
             exit $code
           }
 
+      - name: Save compiled QCAD (cache)
+        if: steps.qcadcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            qcad/release
+            qcad/plugins
+          key: qcad-${{ env.QCAD_TAG }}-qt${{ env.QT_VERSION }}-${{ hashFiles('patches/**') }}-build-v1
+
       - name: Assemble portable package
         shell: pwsh
         run: |
-          $pkg = "AmeenCAD"
-          New-Item -ItemType Directory -Force $pkg | Out-Null
+          $ErrorActionPreference = 'Stop'
+          $pkg = (New-Item -ItemType Directory -Force "AmeenCAD").FullName
+          Get-ChildItem qcad\release | Select-Object -ExpandProperty Name | Write-Output
           Copy-Item qcad\release\*.exe, qcad\release\*.dll $pkg
-          foreach ($d in 'scripts','fonts','patterns','linetypes','libraries','themes','plugins','ts') {
-            if (Test-Path "qcad\$d") { Copy-Item -Recurse "qcad\$d" "$pkg\$d" }
+          # robocopy tolerates the broken links in QCAD's scripts tree; exit codes < 8 mean success
+          foreach ($d in 'scripts','fonts','patterns','linetypes','libraries','themes','plugins','ts','examples') {
+            if (Test-Path "qcad\$d") {
+              robocopy "qcad\$d" "$pkg\$d" /E /NFL /NDL /NJH /NJS /NP /R:0 /W:0 | Out-Null
+              if ($LASTEXITCODE -ge 8) { throw "robocopy $d failed ($LASTEXITCODE)" }
+            }
           }
-          Copy-Item -Recurse ameencad\scripts\AmeenCAD "$pkg\scripts\AmeenCAD"
+          $global:LASTEXITCODE = 0
+          robocopy ameencad\scripts\AmeenCAD "$pkg\scripts\AmeenCAD" /E /NFL /NDL /NJH /NJS /NP | Out-Null
           New-Item -ItemType Directory -Force "$pkg\scripts\AmeenCAD\Tests" | Out-Null
           Copy-Item ameencad\tests\qcad\*.js "$pkg\scripts\AmeenCAD\Tests"
           Copy-Item qcad\LICENSE.txt, qcad\gpl-3.0.txt, qcad\gpl-3.0-exceptions.txt, qcad\lgpl.txt, qcad\cc-by-3.0.txt $pkg
           Copy-Item LICENSES.md, THIRD_PARTY_NOTICES.md, README.md $pkg
-          windeployqt --release --no-translations --no-compiler-runtime "$pkg\qcad.exe"
-          # offscreen platform plugin, used only by the automated tests:
-          Copy-Item "$env:QT_ROOT_DIR\plugins\platforms\qoffscreen.dll" "$pkg\platforms\"
-          # MSVC runtime DLLs so the zip runs on a clean PC:
-          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Recurse -Filter "vcruntime140*.dll" | Select-Object -First 1
-          if ($crt) { Copy-Item "$($crt.Directory.FullName)\*.dll" $pkg }
+
+          # Qt DLLs + Qt plugins for the exe AND every QCAD library/plugin (windeployqt only scans what it is given)
+          $bins = @("$pkg\qcad.exe") + (Get-ChildItem $pkg -Filter *.dll | Where-Object { $_.Name -notmatch '^(Qt5|msvcp|vcruntime|concrt)' } | ForEach-Object FullName) + (Get-ChildItem "$pkg\plugins" -Recurse -Filter *.dll | ForEach-Object FullName)
+          foreach ($b in $bins) {
+            windeployqt --release --no-translations --no-compiler-runtime --dir $pkg --plugindir "$pkg\plugins" $b | Out-Null
+          }
+          $global:LASTEXITCODE = 0
+          # Qt Script is not detected by windeployqt in all cases; copy explicitly
+          $qtbin = (qmake -query QT_INSTALL_BINS).Trim()
+          $qtplugins = (qmake -query QT_INSTALL_PLUGINS).Trim()
+          foreach ($m in 'Qt5Script','Qt5ScriptTools','Qt5XmlPatterns','Qt5Designer','Qt5Sql','Qt5Svg','Qt5PrintSupport','Qt5OpenGL','Qt5Network','Qt5Xml','Qt5Concurrent') {
+            if (Test-Path "$qtbin\$m.dll") { Copy-Item "$qtbin\$m.dll" $pkg -Force }
+          }
+          # QCAD looks for Qt plugins next to the exe via qt.conf
+          "[Paths]`nPlugins = plugins" | Out-File -Encoding ascii "$pkg\qt.conf"
+          # offscreen platform, used only by the automated tests
+          New-Item -ItemType Directory -Force "$pkg\plugins\platforms" | Out-Null
+          Copy-Item "$qtplugins\platforms\qoffscreen.dll", "$qtplugins\platforms\qwindows.dll" "$pkg\plugins\platforms" -Force
+
+          # Microsoft C++ runtime DLLs so the zip runs on a clean PC (newest redist is backward compatible)
+          $crt = Get-ChildItem "$env:VSINSTALLDIR\VC\Redist\MSVC" -Directory -ErrorAction SilentlyContinue |
+                 Sort-Object Name -Descending |
+                 ForEach-Object { Get-ChildItem "$($_.FullName)\x64" -Directory -Filter "Microsoft.VC14*.CRT" -ErrorAction SilentlyContinue } |
+                 Select-Object -First 1
+          if ($crt) { Copy-Item "$($crt.FullName)\*.dll" $pkg -Force; Write-Output "CRT from $($crt.FullName)" }
+          else { Write-Output "::warning::MSVC runtime DLLs not found; users may need the VC++ 2015-2022 redistributable" }
+
+          Get-ChildItem $pkg -Filter *.dll | Measure-Object | ForEach-Object { "DLLs in package: $($_.Count)" }
+          if (-not (Test-Path "$pkg\qcad.exe")) { throw "qcad.exe missing" }
 
       - name: Run tests on Windows
         shell: pwsh
@@ -115,21 +167,53 @@ jobs:
           node ameencad\tests\unit\wall_geometry.test.js | Tee-Object test-results\unit_results.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Push-Location AmeenCAD
-          foreach ($t in 'SaveReopenSmokeTest','WallIntegrationTest') {
-            Start-Process .\qcad.exe -ArgumentList "-platform","offscreen","-no-gui","-allow-multiple-instances","-locale","en","-autostart","scripts\AmeenCAD\Tests\$t.js",$out -Wait -NoNewWindow
+          function Run-Qcad($argList, $name) {
+            $p = Start-Process .\qcad.exe -ArgumentList $argList -PassThru -NoNewWindow `
+                   -RedirectStandardOutput "$out\$name.out.txt" -RedirectStandardError "$out\$name.err.txt"
+            if (-not $p.WaitForExit(300000)) { $p.Kill(); Write-Output "::error::$name timed out" }
+            Write-Output "== $name exit $($p.ExitCode)"
+            Get-Content "$out\$name.err.txt" -ErrorAction SilentlyContinue | Select-String -Pattern 'Error|error|Warning|cannot|failed' | Select-Object -First 15 | ForEach-Object { "  " + $_.Line }
           }
-          Start-Process .\qcad.exe -ArgumentList "-platform","offscreen","-allow-multiple-instances","-no-show","-locale","en","-exec","scripts\AmeenCAD\Tests\GuiSmokeTest.js",$out,"-quit" -Wait -NoNewWindow
+          foreach ($t in 'SaveReopenSmokeTest','WallIntegrationTest') {
+            Run-Qcad @("-platform","offscreen","-no-gui","-allow-multiple-instances","-locale","en","-autostart","scripts\AmeenCAD\Tests\$t.js",$out) $t
+          }
+          Run-Qcad @("-platform","offscreen","-allow-multiple-instances","-no-show","-locale","en","-exec","scripts\AmeenCAD\Tests\GuiSmokeTest.js",$out,"-quit") "GuiSmokeTest"
           Pop-Location
-          Get-Content test-results\smoke_results.txt, test-results\wall_integration_results.txt, test-results\gui_smoke_results.txt
-          $bad = Select-String -Path test-results\*_results.txt -Pattern '^FAIL'
-          if ($bad -or -not (Test-Path test-results\wall_integration_results.txt) -or -not (Test-Path test-results\gui_smoke_results.txt)) { exit 1 }
+          $fail = $false
+          foreach ($f in 'smoke_results.txt','wall_integration_results.txt','gui_smoke_results.txt') {
+            if (Test-Path "$out\$f") {
+              $last = (Get-Content "$out\$f" | Select-Object -Last 1)
+              Write-Output "$f -> $last"
+              Get-Content "$out\$f" | Select-String '^FAIL' | ForEach-Object { Write-Output "::error::$f $($_.Line)"; $fail = $true }
+            } else { Write-Output "::error::$f was not produced"; $fail = $true }
+          }
+          if ($fail) { exit 1 }
 
-      - name: Upload AmeenCAD (Windows x64, portable)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AmeenCAD-windows-x64
-          path: AmeenCAD
+      - name: Zip package
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force AmeenCAD\scripts\AmeenCAD\Tests -ErrorAction SilentlyContinue
+          Compress-Archive -Path AmeenCAD -DestinationPath AmeenCAD-windows-x64.zip -CompressionLevel Optimal
+          "{0:N1} MB" -f ((Get-Item AmeenCAD-windows-x64.zip).Length / 1MB)
+
+      - name: Publish downloadable release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v0.1.0-build.${{ github.run_number }}"
+          cat > notes.md <<EOF
+          AmeenCAD 0.1 (development build ${{ github.run_number }}) for Windows 10/11 64-bit.
+
+          **Install:** download \`AmeenCAD-windows-x64.zip\`, right-click > Extract All, open the folder, double-click \`qcad.exe\`.
+          Wall tools: **Architecture** menu (commands \`wall\`, \`wallline\`).
+
+          Built from QCAD Community Edition ${QCAD_TAG} (GPL v3) + AmeenCAD add-on, commit ${GITHUB_SHA::7}. All automated tests passed on Windows in this build.
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release create "$TAG" AmeenCAD-windows-x64.zip --repo "$GITHUB_REPOSITORY" --title "AmeenCAD 0.1 build ${{ github.run_number }} (Windows)" --notes-file notes.md --prerelease
+          echo "::notice::Download: https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/AmeenCAD-windows-x64.zip"
 
       - name: Upload test results and logs
         if: always()
